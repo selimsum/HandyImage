@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name		Handy Image
-// @version		2026.09.25
+// @version		2026.10.05
 // @author		Owyn
 // @contributor	ubless607, bitst0rm
 // @namespace	handyimage
@@ -857,7 +857,8 @@
 // @match		https://skr.sh/*
 // @match		https://i.redd.it/*
 // @match		https://preview.redd.it/*
-// @match		https://www.reddit.com/media?url=*
+// @match		https://reddit.com/media*
+// @include		*://*.reddit.com/media*
 // @match		https://vsco.co/*/media/*
 // @match		https://www.gettyimages.com/detail*photo*
 // @match		https://www.gettyimages.com/detail*video*
@@ -1180,7 +1181,7 @@ function onbeforeunload() // back helper
 function makeimage()
 {
 	if(typeof cfg_js !== "string") { console.log("waiting for settings to load to makeimage()"); if(!loadCfg_callbacks.includes(makeimage)){loadCfg_callbacks.push(makeimage);} return false;} // lets wait for stupd async
-	if(cfg_direct === true && !direct_blocked)
+	if(cfg_direct === true && !direct_blocked && !/(?:^|\.)reddit\.com$/.test(window.location.hostname) && !i.src.includes("i.redd.it") && !i.src.includes("preview.redd.it"))
 	{
 		let navigate = function() {
 			sessionStorage.hji_direct = window.location.href;
@@ -1347,10 +1348,48 @@ function makeworld()
 		i = q('a img');
 		if(i){i.src = i.parentNode.href;}
 		break;
+	case "reddit.com":
+	case "www.reddit.com":
 	case "i.redd.it":
 	case "preview.redd.it":
-		i = q('faceplate-img, img');
-		if(i){i.src = i.getAttribute("src");}
+		// On Reddit media challenge page, wait for challenge form submission
+		if (document.forms.length > 0 && document.forms[0].elements.namedItem("solution") && !window.location.search.includes("solution=")) {
+			console.log("Handy Image: Waiting for Reddit challenge to submit...");
+			break;
+		}
+		let targetUrl = new URLSearchParams(window.location.search).get("url");
+		if(targetUrl)
+		{
+			let fn = targetUrl.split('?')[0].split('/').pop();
+			if(fn) { fn = CSS.escape(fn); i = q(`zoomable-img img, img.cursor-zoom-in, img[src*="${fn}"], faceplate-img[src*="${fn}"]`); }
+		}
+		if(!i)
+		{
+			i = q('zoomable-img img, img.cursor-zoom-in, shreddit-media-lightbox img, img.media-lightbox-img, faceplate-img:not([class*="icon"]) img, main img');
+		}
+		if(!i && window.location.search.includes("solution=") && targetUrl)
+		{
+			i = protected_createElement('img');
+			i.src = targetUrl;
+		}
+		if(i && i.src)
+		{
+			i.src = i.getAttribute("src") || i.src;
+			let m = i.src.match(/preview\.redd\.it\/(?:.*-v\d+-)?([a-zA-Z0-9]+)\.(jpg|jpeg|png|gif|webp)/i);
+			if(m)
+			{
+				let bestUrl = "https://i.redd.it/" + m[1] + "." + m[2];
+				let fallbackUrl = i.src;
+				i.src = bestUrl;
+				try { window.history.replaceState(null, "", "https://www.reddit.com/media?url=" + encodeURIComponent(bestUrl)); } catch(e){}
+				i.addEventListener('error', function onErr() {
+					i.removeEventListener('error', onErr);
+					console.warn("Handy Image: i.redd.it failed, falling back to preview URL");
+					i.src = fallbackUrl;
+					try { window.history.replaceState(null, "", "https://www.reddit.com/media?url=" + encodeURIComponent(fallbackUrl)); } catch(e){}
+				}, {once: true});
+			}
+		}
 		break;
 	case "savepic.org":
 	case "savepic.ru":
@@ -3282,7 +3321,7 @@ function makeworld()
 	}
 	//
 	//firefox handmade noscript
-	if(!j)
+	if(!j && !/(?:^|\.)reddit\.com$/.test(window.location.hostname))
 	{
 		j = true;
 		window.addEventListener('beforescriptexecute', onscript, true); // useless, but let it be
