@@ -989,6 +989,7 @@ if (document.title == "Attention Required! | Cloudflare" || document.title == "J
 	console.warn("Cloudflare MITM guard page.  Stopping.");
 	return false;
 }
+var direct_blocked = false;
 if(sessionStorage.length)
 {
 	if(sessionStorage.hji)
@@ -1000,6 +1001,19 @@ if(sessionStorage.length)
 			return false;
 		}
 		sessionStorage.removeItem("hji");
+	}
+	else if(sessionStorage.hji_direct)
+	{
+		if(sessionStorage.hji_direct === window.location.href)
+		{
+			console.warn("Handy Image: direct redirection blocked by host, falling back to HandyImage display");
+			sessionStorage.removeItem("hji_direct");
+			direct_blocked = true;
+		}
+		else
+		{
+			sessionStorage.removeItem("hji_direct");
+		}
 	}
 	else if(sessionStorage.hji_back)
 	{
@@ -1166,7 +1180,34 @@ function onbeforeunload() // back helper
 function makeimage()
 {
 	if(typeof cfg_js !== "string") { console.log("waiting for settings to load to makeimage()"); if(!loadCfg_callbacks.includes(makeimage)){loadCfg_callbacks.push(makeimage);} return false;} // lets wait for stupd async
-	if(cfg_direct === true){let a = protected_createElement('a'); a.setAttribute('href',i.src); a.click(); return false;}
+	if(cfg_direct === true && !direct_blocked)
+	{
+		let navigate = function() {
+			sessionStorage.hji_direct = window.location.href;
+			window.location.replace(i.src);
+		};
+		let done = false;
+		let onLoaded = function() {
+			if(done) return;
+			done = true;
+			navigate();
+		};
+		if(is_video || (i.complete && i.naturalWidth > 0))
+		{
+			navigate();
+		}
+		else
+		{
+			i.addEventListener('load', onLoaded, {once: true});
+			i.addEventListener('error', onLoaded, {once: true});
+			let img = new Image();
+			img.onload = onLoaded;
+			img.onerror = onLoaded;
+			img.src = i.src;
+			setTimeout(onLoaded, 5000); // safety net if load/error never fire
+		}
+		return false;
+	}
 	let css 
  = `:root, body
 {
